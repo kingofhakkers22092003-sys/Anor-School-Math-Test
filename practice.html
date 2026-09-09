@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Amaliy topshiriqlar · Anor School</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="test-page" data-section="Amaliy">
+    <header class="site-header">
+      <a class="brand" href="index.html"
+        ><span class="brand-mark">∑</span
+        ><span
+          ><strong>Anor</strong><small>INTERNATIONAL SCHOOL</small></span
+        ></a
+      ><a class="back-link" href="index.html">← Bosh sahifa</a>
+    </header>
+    <main class="test-main">
+      <section class="test-intro writing-theme">
+        <p class="eyebrow">02 · AMALIY</p>
+        <h1>Amaliy topshiriqlar</h1>
+        <p>
+          Masalani o‘zingiz yeching. Yechimni qadam-baqadam yozing. O‘qituvchi yoki AI yechimni baholaydi.
+        </p>
+      </section>
+      <form id="writingForm" class="test-form">
+        <div class="question">
+          <span class="question-number">TOPSHIRIQ 01</span>
+          <h2>Masalani yeching</h2>
+          <label
+            >Javobingiz<textarea
+              name="answer1"
+              rows="6"
+              placeholder="Yechimingizni shu yerga yozing…"
+            ></textarea>
+          </label>
+        </div>
+        <button class="primary-button submit-test writing-theme" type="submit">
+          Yechimni yuborish →
+        </button>
+        <div id="testResult" class="result-box"></div>
+      </form>
+    </main>
+    <footer>© Anor International School · Matematika diagnostikasi · Created by Mamadaminov</footer>
+    <script src="app.js"></script>
+  </body>
+</html>

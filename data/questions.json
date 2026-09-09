@@ -1,0 +1,73 @@
+{
+  "Test": [
+    {
+      "id": "t1",
+      "prompt": "15 + 27 = ?",
+      "options": [
+        "32",
+        "42",
+        "52",
+        "41"
+      ],
+      "answer": "1"
+    },
+    {
+      "id": "t2",
+      "prompt": "8 × 7 = ?",
+      "options": [
+        "54",
+        "56",
+        "48",
+        "63"
+      ],
+      "answer": "1"
+    },
+    {
+      "id": "t3",
+      "prompt": "3² + 4² = ?",
+      "options": [
+        "7",
+        "12",
+        "25",
+        "49"
+      ],
+      "answer": "2"
+    },
+    {
+      "id": "t4",
+      "prompt": "Agar 2x = 18 bo‘lsa, x ning qiymati qancha?",
+      "options": [
+        "8",
+        "9",
+        "16",
+        "36"
+      ],
+      "answer": "1"
+    },
+    {
+      "id": "t5",
+      "prompt": "1/2 + 1/4 = ?",
+      "options": [
+        "1/6",
+        "2/6",
+        "3/4",
+        "1/4"
+      ],
+      "answer": "2"
+    }
+  ],
+  "Amaliy": [
+    {
+      "id": "p1",
+      "prompt": "5 ta daftar 12 000 so‘m. 3 ta daftar necha so‘m turadi? Yechimini qadam-baqadam yozing."
+    },
+    {
+      "id": "p2",
+      "prompt": "To‘g‘ri to‘rtburchakning tomonlari 8 sm va 5 sm. Yuzasi va perimetrini toping."
+    },
+    {
+      "id": "p3",
+      "prompt": "3(x + 4) = 21 tenglamasini yeching. Yechimni qadam-baqadam yozing."
+    }
+  ]
+}

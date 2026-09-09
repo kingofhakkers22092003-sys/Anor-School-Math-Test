@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Test savollari · Anor School</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="test-page" data-section="Test">
+    <header class="site-header">
+      <a class="brand" href="index.html"
+        ><span class="brand-mark">∑</span
+        ><span
+          ><strong>Anor</strong><small>INTERNATIONAL SCHOOL</small></span
+        ></a
+      ><a class="back-link" href="index.html">← Bosh sahifa</a>
+    </header>
+    <main class="test-main">
+      <section class="test-intro grammar-theme">
+        <p class="eyebrow">01 · ABCD</p>
+        <h1>Test savollari</h1>
+        <p>To‘g‘ri javobni tanlang. Har savol 1 ball.</p>
+      </section>
+      <form class="test-form choice-test">
+        <div class="question" data-answer="1">
+          <span class="question-number">SAVOL 01</span>
+          <h2>15 + 27 = ?</h2>
+          <div class="options">
+            <label class="option"><input type="radio" name="q1" value="0" />A. 32</label>
+            <label class="option"><input type="radio" name="q1" value="1" />B. 42</label>
+            <label class="option"><input type="radio" name="q1" value="2" />C. 52</label>
+            <label class="option"><input type="radio" name="q1" value="3" />D. 41</label>
+          </div>
+        </div>
+        <button class="primary-button submit-test grammar-theme" type="submit">
+          Javoblarni tekshirish →
+        </button>
+        <div id="testResult" class="result-box"></div>
+      </form>
+    </main>
+    <footer>© Anor International School · Matematika diagnostikasi · Created by Mamadaminov</footer>
+    <script src="app.js"></script>
+  </body>
+</html>
