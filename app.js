@@ -26,6 +26,12 @@ async function apiPost(path, body) {
   if (!response.ok) throw Object.assign(new Error(data.error || 'network-error'), { code: data.error });
   return data;
 }
+async function apiPatch(path, body) {
+  const response = await fetch(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(data.error || 'network-error'), { code: data.error });
+  return data;
+}
 async function apiDelete(path) {
   const response = await fetch(path, { method: 'DELETE' });
   return response.json().catch(() => ({}));
@@ -37,6 +43,7 @@ function loginStudent(fullName, password) { return apiPost('/api/login', { fullN
 function getQuestionBank() { return apiGet('/api/questions'); }
 function addQuestion(section, question) { return apiPost('/api/questions', { section, ...question }); }
 function deleteQuestion(section, id) { return apiDelete(`/api/questions/${section}/${id}`); }
+function updateQuestionGrade(section, id, grade) { return apiPatch(`/api/questions/${encodeURIComponent(section)}/${id}`, { grade }); }
 async function gradingMode() { const data = await apiGet('/api/grading-mode'); return data.mode; }
 function setGradingMode(mode) { return apiPost('/api/grading-mode', { mode }); }
 function adminLogin(username, password) { return apiPost('/api/admin/login', { username, password }); }
@@ -350,7 +357,9 @@ async function renderDynamicTest() {
   const section = document.body.dataset.section;
   let bank = {};
   try { bank = await getQuestionBank(); } catch { /* server bilan bog'lanib bo'lmadi */ }
-  const questions = bank[section] || [];
+  const gradeMatch = String(currentStudent()?.schoolClass || '').match(/^\s*(\d{1,2})/);
+  const studentGrade = gradeMatch ? Number(gradeMatch[1]) : null;
+  const questions = (bank[section] || []).filter(question => question.grade === undefined || question.grade === null || Number(question.grade) === studentGrade);
   if (section === 'Test') {
     const form = document.querySelector('.choice-test'); if (!form) return;
     if (!questions.length) { form.innerHTML = noQuestionsMarkup(); return; }
@@ -366,7 +375,8 @@ async function renderDynamicTest() {
 function renderQuestionFields() {
   const section = document.querySelector('#questionSection')?.value; const fields = document.querySelector('#questionFields'); if (!fields) return;
   const choice = section === 'Test';
-  fields.innerHTML = `<label>${t('Savol matni')}<textarea name="prompt" rows="3" required placeholder="${t('Savolni yozing')}"></textarea></label>${choice ? `<label>${t('1-variant')}<input name="option1" required placeholder="${t('Birinchi javob')}" /></label><label>${t('2-variant')}<input name="option2" required placeholder="${t('Ikkinchi javob')}" /></label><label>${t('3-variant')}<input name="option3" required placeholder="${t('Uchinchi javob')}" /></label><label>4-variant<input name="option4" required placeholder="To‘rtinchi javob" /></label><label>${t('To‘g‘ri javob')}<select name="answer"><option value="0">${t('1-variant')}</option><option value="1">${t('2-variant')}</option><option value="2">${t('3-variant')}</option><option value="3">4-variant</option></select></label>` : `<p class="manager-note">${t('Bu ochiq topshiriq. O‘quvchi javobi o‘qituvchi tomonidan baholanadi.')}</p>`}`;
+  const gradeOptions = Array.from({ length: 11 }, (_, index) => `<option value="${index + 1}">${index + 1}-sinf</option>`).join('');
+  fields.innerHTML = `<label>Sinf<select name="grade" required><option value="" selected disabled>Sinfni tanlang</option>${gradeOptions}</select><small>Masalan, 7-sinf savolini 7A va 7B o‘quvchilari ko‘radi.</small></label><label>${t('Savol matni')}<textarea name="prompt" rows="3" required placeholder="${t('Savolni yozing')}"></textarea></label>${choice ? `<label>${t('1-variant')}<input name="option1" required placeholder="${t('Birinchi javob')}" /></label><label>${t('2-variant')}<input name="option2" required placeholder="${t('Ikkinchi javob')}" /></label><label>${t('3-variant')}<input name="option3" required placeholder="${t('Uchinchi javob')}" /></label><label>4-variant<input name="option4" required placeholder="To‘rtinchi javob" /></label><label>${t('To‘g‘ri javob')}<select name="answer"><option value="0">${t('1-variant')}</option><option value="1">${t('2-variant')}</option><option value="2">${t('3-variant')}</option><option value="3">4-variant</option></select></label>` : `<p class="manager-note">${t('Bu ochiq topshiriq. O‘quvchi javobi o‘qituvchi tomonidan baholanadi.')}</p>`}`;
 }
 async function renderTeacherQuestions() {
   const list = document.querySelector('#teacherQuestionList'); const count = document.querySelector('#questionCount'); const section = document.querySelector('#questionSection')?.value;
@@ -375,7 +385,8 @@ async function renderTeacherQuestions() {
   try { bank = await getQuestionBank(); } catch { list.innerHTML = `<div class="teacher-empty">${t('Xatolik yuz berdi, qayta urinib ko‘ring.')}</div>`; return; }
   const questions = bank[section] || []; count.textContent = `${questions.length} ${t('ta savol')}`;
   if (!questions.length) { list.innerHTML = `<div class="teacher-empty">${t('Bu test turida savol qolmadi. Chap tomondagi forma orqali yangisini qo‘shing.')}</div>`; return; }
-  list.innerHTML = questions.map((question, index) => `<article class="teacher-question"><p><strong>${index + 1}.</strong> ${escapeHtml(t(question.prompt))}</p>${question.options ? `<small>${t('Variantlar:')} ${question.options.map((option, optionIndex) => `${optionIndex + 1}) ${escapeHtml(t(option))}`).join(' · ')}<br>${t('To‘g‘ri javob')}: ${Number(question.answer) + 1}-${t('variant')}</small>` : `<small>${t('Ochiq javobli topshiriq')}</small>`}<button class="delete-question" type="button" data-section="${section}" data-id="${question.id}">${t('Savolni olib tashlash')}</button></article>`).join('');
+  const gradeOptions = Array.from({ length: 11 }, (_, index) => `<option value="${index + 1}">${index + 1}-sinf</option>`).join('');
+  list.innerHTML = questions.map((question, index) => `<article class="teacher-question"><p><strong>${index + 1}.</strong> ${escapeHtml(t(question.prompt))}</p><label><small><strong>Sinf:</strong></small><select class="question-grade" data-section="${section}" data-id="${question.id}"><option value="" ${question.grade ? '' : 'selected'}>Barcha sinflar (eski savol)</option>${gradeOptions.replace(`value="${question.grade}"`, `value="${question.grade}" selected`)}</select></label>${question.options ? `<small>${t('Variantlar:')} ${question.options.map((option, optionIndex) => `${optionIndex + 1}) ${escapeHtml(t(option))}`).join(' · ')}<br>${t('To‘g‘ri javob')}: ${Number(question.answer) + 1}-${t('variant')}</small>` : `<small>${t('Ochiq javobli topshiriq')}</small>`}<button class="delete-question" type="button" data-section="${section}" data-id="${question.id}">${t('Savolni olib tashlash')}</button></article>`).join('');
 }
 
 function setupAdminSettingsForm() {
@@ -434,7 +445,7 @@ async function setupQuestionManager() {
     const formData = new FormData(form);
     const data = Object.fromEntries(formData);
     const choice = data.section === 'Test';
-    const question = { prompt: data.prompt.trim() };
+    const question = { grade: Number(data.grade), prompt: data.prompt.trim() };
     if (choice) { question.options = [data.option1.trim(), data.option2.trim(), data.option3.trim(), data.option4.trim()]; question.answer = data.answer; }
     const submitButton = form.querySelector('button[type="submit"]');
     try {
@@ -447,6 +458,11 @@ async function setupQuestionManager() {
   document.querySelector('#teacherQuestionList')?.addEventListener('click', async event => {
     const button = event.target.closest('.delete-question'); if (!button) return;
     try { await deleteQuestion(button.dataset.section, button.dataset.id); await renderTeacherQuestions(); } catch { alert(t('Xatolik yuz berdi, qayta urinib ko‘ring.')); }
+  });
+  document.querySelector('#teacherQuestionList')?.addEventListener('change', async event => {
+    const select = event.target.closest('.question-grade'); if (!select || !select.value) return;
+    try { await updateQuestionGrade(select.dataset.section, select.dataset.id, Number(select.value)); await renderTeacherQuestions(); }
+    catch { alert(t('Xatolik yuz berdi, qayta urinib ko‘ring.')); await renderTeacherQuestions(); }
   });
   document.querySelector('#teacherStudentList')?.addEventListener('click', async event => {
     const pdfButton = event.target.closest('.teacher-pdf-button');

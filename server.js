@@ -382,11 +382,12 @@ app.get('/api/questions', (req, res) => {
 });
 
 app.post('/api/questions', (req, res) => {
-  const { section, prompt, options, answer } = req.body || {};
-  if (!section || !prompt) return res.status(400).json({ error: 'invalid' });
+  const { section, grade, prompt, options, answer } = req.body || {};
+  const normalizedGrade = Number(grade);
+  if (!section || !prompt || !Number.isInteger(normalizedGrade) || normalizedGrade < 1 || normalizedGrade > 11) return res.status(400).json({ error: 'invalid' });
   withDb(db => {
     if (!db.questionBank[section] || !Array.isArray(db.questionBank[section])) db.questionBank[section] = [];
-    const question = { id: crypto.randomUUID(), prompt };
+    const question = { id: crypto.randomUUID(), grade: normalizedGrade, prompt };
     if (options) question.options = options;
     if (answer !== undefined) question.answer = answer;
     db.questionBank[section].push(question);
@@ -395,6 +396,18 @@ app.post('/api/questions', (req, res) => {
   })
     .then(bank => res.json(bank))
     .catch(() => res.status(500).json({ error: 'server-error' }));
+});
+
+app.patch('/api/questions/:section/:id', (req, res) => {
+  const normalizedGrade = Number(req.body?.grade);
+  if (!Number.isInteger(normalizedGrade) || normalizedGrade < 1 || normalizedGrade > 11) return res.status(400).json({ error: 'invalid' });
+  withDb(db => {
+    const question = (db.questionBank[req.params.section] || []).find(item => item.id === req.params.id);
+    if (!question) return null;
+    question.grade = normalizedGrade;
+    saveDb(db);
+    return db.questionBank;
+  }).then(bank => bank ? res.json(bank) : res.status(404).json({ error: 'not-found' })).catch(() => res.status(500).json({ error: 'server-error' }));
 });
 
 app.delete('/api/questions/:section/:id', (req, res) => {
