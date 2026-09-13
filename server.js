@@ -7,6 +7,7 @@ const FormData = require('form-data');
 const fetch = require('node-fetch');
 const OpenAI = require('openai');
 const crypto = require('crypto');
+const database = require('./supabase');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +48,8 @@ const SETTINGS_FILE = path.join(dataDir, 'settings.json');
 const LEGACY_DB_FILE = path.join(dataDir, 'store.json'); // eski (bitta fayl) format - faqat bir martalik migratsiya uchun
 
 const TEST_KEYS = ['Test', 'Amaliy'];
+const DEFAULT_SETTINGS = { gradingMode: 'teacher', adminUsername: 'admin', adminPassword: 'admin' };
+const getSettings = () => database.getSettings(DEFAULT_SETTINGS);
 
 const DEFAULT_QUESTIONS = {
   Test: [
@@ -226,35 +229,23 @@ async function finalizeIfComplete(student) {
 }
 
 // ---------- O'quvchilar: ro'yxatdan o'tish / kirish / ro'yxat ----------
-app.get('/api/students', (req, res) => {
-  withDb(db => db.students.map(sanitizeStudent))
-    .then(list => res.json(list))
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+app.get('/api/students', async (req, res) => {
+  try { res.json((await database.getStudents()).map(sanitizeStudent)); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.get('/api/students/:id', (req, res) => {
-  withDb(async db => {
-    const student = findStudent(db, req.params.id);
-    if (!student) return null;
-    maybeArchiveAttempt(student);
-    await finalizeIfComplete(student);
-    saveDb(db);
-    return sanitizeStudent(student);
-  })
-    .then(student => {
-      if (!student) return res.status(404).json({ error: 'not-found' });
-      res.json(student);
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+app.get('/api/students/:id', async (req, res) => {
+  try { const student = await database.getStudent(req.params.id); if (!student) return res.status(404).json({ error: 'not-found' }); maybeArchiveAttempt(student); await finalizeIfComplete(student); await database.saveStudent(student); res.json(sanitizeStudent(student)); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { fullName, schoolClass, password } = req.body || {};
   if (!fullName || !schoolClass || !password) return res.status(400).json({ error: 'invalid' });
-  withDb(db => {
-    if (fullName.trim().toLowerCase() === db.adminUsername.toLowerCase()) return { error: 'admin-reserved' };
-    const exists = db.students.some(item => item.fullName.toLowerCase() === fullName.trim().toLowerCase() && item.schoolClass === schoolClass);
-    if (exists) return { error: 'duplicate' };
+  try {
+    const settings = await getSettings(); const name = fullName.trim().toLowerCase();
+    if (name === settings.adminUsername.toLowerCase()) return res.status(400).json({ error: 'admin-reserved' });
+    const students = await database.getStudents(); if (students.some(item => item.fullName.toLowerCase() === name && item.schoolClass === schoolClass)) return res.status(409).json({ error: 'duplicate' });
     const student = {
       id: crypto.randomUUID(),
       fullName: fullName.trim(),
@@ -266,222 +257,138 @@ app.post('/api/register', (req, res) => {
       telegramSent: false,
       telegramError: null,
     };
-    db.students.push(student);
-    saveDb(db);
-    return { student: sanitizeStudent(student) };
-  })
-    .then(result => {
-      if (result.error === 'admin-reserved') return res.status(400).json({ error: 'admin-reserved' });
-      if (result.error === 'duplicate') return res.status(409).json({ error: 'duplicate' });
-      res.json(result.student);
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+    await database.saveStudent(student); res.json(sanitizeStudent(student));
+  } catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { fullName, password } = req.body || {};
   if (!fullName || !password) return res.status(400).json({ error: 'invalid' });
-  withDb(db => db.students.find(item => item.fullName.toLowerCase() === fullName.trim().toLowerCase() && item.password === password))
-    .then(student => {
-      if (!student) return res.status(401).json({ error: 'invalid-credentials' });
-      res.json(sanitizeStudent(student));
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+  try { const student = (await database.getStudents()).find(item => item.fullName.toLowerCase() === fullName.trim().toLowerCase() && item.password === password); if (!student) return res.status(401).json({ error: 'invalid-credentials' }); res.json(sanitizeStudent(student)); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/students/:id/result', (req, res) => {
+app.post('/api/students/:id/result', async (req, res) => {
   const { section, score, total, note } = req.body || {};
-  if (!section) return res.status(400).json({ error: 'invalid' });
-  withDb(async db => {
-    const student = findStudent(db, req.params.id);
-    if (!student) return null;
+  if (!TEST_KEYS.includes(section)) return res.status(400).json({ error: 'invalid' });
+  try { const student = await database.getStudent(req.params.id); if (!student) return res.status(404).json({ error: 'not-found' });
     student.results = { ...(student.results || {}), [section]: { score, total, note: note || '', pending: false, completedAt: new Date().toISOString() } };
     if (student.pendingReview?.[section]) { const rest = { ...student.pendingReview }; delete rest[section]; student.pendingReview = rest; }
     maybeArchiveAttempt(student);
     await finalizeIfComplete(student);
-    saveDb(db);
-    return sanitizeStudent(student);
-  })
-    .then(student => {
-      if (!student) return res.status(404).json({ error: 'not-found' });
-      res.json(student);
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+    await database.saveStudent(student); res.json(sanitizeStudent(student));
+  } catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/students/:id/pending', (req, res) => {
+app.post('/api/students/:id/pending', async (req, res) => {
   const { section, total, content } = req.body || {};
-  if (!section) return res.status(400).json({ error: 'invalid' });
-  withDb(db => {
-    const student = findStudent(db, req.params.id);
-    if (!student) return null;
+  if (!TEST_KEYS.includes(section)) return res.status(400).json({ error: 'invalid' });
+  try { const student = await database.getStudent(req.params.id); if (!student) return res.status(404).json({ error: 'not-found' });
     student.results = { ...(student.results || {}), [section]: { score: null, total, note: '', pending: true, completedAt: new Date().toISOString() } };
     student.pendingReview = { ...(student.pendingReview || {}), [section]: content };
-    saveDb(db);
-    return sanitizeStudent(student);
-  })
-    .then(student => {
-      if (!student) return res.status(404).json({ error: 'not-found' });
-      res.json(student);
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+    await database.saveStudent(student); res.json(sanitizeStudent(student));
+  } catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/students/:id/grade', (req, res) => {
+app.post('/api/students/:id/grade', async (req, res) => {
   const { section, score, total, comment } = req.body || {};
-  if (!section) return res.status(400).json({ error: 'invalid' });
-  withDb(async db => {
-    const student = findStudent(db, req.params.id);
-    if (!student) return null;
+  if (!TEST_KEYS.includes(section)) return res.status(400).json({ error: 'invalid' });
+  try { const student = await database.getStudent(req.params.id); if (!student) return res.status(404).json({ error: 'not-found' });
     const previous = student.results?.[section];
     student.results = { ...(student.results || {}), [section]: { score, total, note: comment || '', pending: false, completedAt: previous?.completedAt || new Date().toISOString() } };
     if (student.pendingReview?.[section]) { const rest = { ...student.pendingReview }; delete rest[section]; student.pendingReview = rest; }
     maybeArchiveAttempt(student);
     await finalizeIfComplete(student);
-    saveDb(db);
-    return sanitizeStudent(student);
-  })
-    .then(student => {
-      if (!student) return res.status(404).json({ error: 'not-found' });
-      res.json(student);
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+    await database.saveStudent(student); res.json(sanitizeStudent(student));
+  } catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/students/:id/reset', (req, res) => {
-  withDb(async db => {
-    const student = findStudent(db, req.params.id);
-    if (!student) return { error: 'not-found' };
+app.post('/api/students/:id/reset', async (req, res) => {
+  try { const student = await database.getStudent(req.params.id); if (!student) return res.status(404).json({ error: 'not-found' });
     // Ustoz hali tekshirmagan yoki natija Telegram guruhga hali yuborilmagan bo'lsa,
     // natijalar oynasini yopish (va yangi urinishni boshlash) mumkin emas.
     await finalizeIfComplete(student); // oxirgi imkoniyat sifatida yana bir bor urinib ko'ramiz
     if (!isFullyGraded(student) || !student.telegramSent) {
-      saveDb(db);
-      return { error: 'not-ready' };
+      await database.saveStudent(student); return res.status(400).json({ error: 'not-ready' });
     }
     student.results = {};
     student.pendingReview = {};
     student.telegramSent = false;
     student.telegramError = null;
-    saveDb(db);
-    return { student: sanitizeStudent(student) };
-  })
-    .then(result => {
-      if (result.error === 'not-found') return res.status(404).json({ error: 'not-found' });
-      if (result.error === 'not-ready') return res.status(400).json({ error: 'not-ready' });
-      res.json(result.student);
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+    await database.saveStudent(student); res.json(sanitizeStudent(student));
+  } catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
 // ---------- Savollar banki ----------
-app.get('/api/questions', (req, res) => {
-  withDb(db => db.questionBank)
-    .then(bank => res.json(bank))
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+app.get('/api/questions', async (req, res) => {
+  try { res.json(await database.getQuestionBank(TEST_KEYS)); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/questions', (req, res) => {
+app.post('/api/questions', async (req, res) => {
   const { section, grade, prompt, options, answer } = req.body || {};
   const normalizedGrade = Number(grade);
-  if (!section || !prompt || !Number.isInteger(normalizedGrade) || normalizedGrade < 1 || normalizedGrade > 11) return res.status(400).json({ error: 'invalid' });
-  withDb(db => {
-    if (!db.questionBank[section] || !Array.isArray(db.questionBank[section])) db.questionBank[section] = [];
+  if (!TEST_KEYS.includes(section) || !prompt || !Number.isInteger(normalizedGrade) || normalizedGrade < 1 || normalizedGrade > 11) return res.status(400).json({ error: 'invalid' });
+  try {
     const question = { id: crypto.randomUUID(), grade: normalizedGrade, prompt };
     if (options) question.options = options;
     if (answer !== undefined) question.answer = answer;
-    db.questionBank[section].push(question);
-    saveDb(db);
-    return db.questionBank;
-  })
-    .then(bank => res.json(bank))
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+    await database.addQuestion(question, section); res.json(await database.getQuestionBank(TEST_KEYS));
+  } catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.patch('/api/questions/:section/:id', (req, res) => {
+app.patch('/api/questions/:section/:id', async (req, res) => {
   const normalizedGrade = Number(req.body?.grade);
-  if (!Number.isInteger(normalizedGrade) || normalizedGrade < 1 || normalizedGrade > 11) return res.status(400).json({ error: 'invalid' });
-  withDb(db => {
-    const question = (db.questionBank[req.params.section] || []).find(item => item.id === req.params.id);
-    if (!question) return null;
-    question.grade = normalizedGrade;
-    saveDb(db);
-    return db.questionBank;
-  }).then(bank => bank ? res.json(bank) : res.status(404).json({ error: 'not-found' })).catch(() => res.status(500).json({ error: 'server-error' }));
+  if (!TEST_KEYS.includes(req.params.section) || !Number.isInteger(normalizedGrade) || normalizedGrade < 1 || normalizedGrade > 11) return res.status(400).json({ error: 'invalid' });
+  try { const bank = await database.getQuestionBank(TEST_KEYS); if (!bank[req.params.section].some(question => question.id === req.params.id)) return res.status(404).json({ error: 'not-found' }); await database.updateQuestionGrade(req.params.id, normalizedGrade); res.json(await database.getQuestionBank(TEST_KEYS)); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.delete('/api/questions/:section/:id', (req, res) => {
-  withDb(db => {
-    const section = req.params.section;
-    db.questionBank[section] = (db.questionBank[section] || []).filter(question => question.id !== req.params.id);
-    saveDb(db);
-    return db.questionBank;
-  })
-    .then(bank => res.json(bank))
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+app.delete('/api/questions/:section/:id', async (req, res) => {
+  if (!TEST_KEYS.includes(req.params.section)) return res.status(400).json({ error: 'invalid' });
+  try { await database.removeQuestion(req.params.id); res.json(await database.getQuestionBank(TEST_KEYS)); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
 // ---------- Baholash rejimi (AI / Ustoz) ----------
-app.get('/api/grading-mode', (req, res) => {
-  withDb(db => db.gradingMode)
-    .then(mode => res.json({ mode }))
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+app.get('/api/grading-mode', async (req, res) => {
+  try { res.json({ mode: (await getSettings()).gradingMode }); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/grading-mode', (req, res) => {
+app.post('/api/grading-mode', async (req, res) => {
   const { mode } = req.body || {};
   if (mode !== 'ai' && mode !== 'teacher') return res.status(400).json({ error: 'invalid' });
-  withDb(db => {
-    db.gradingMode = mode;
-    saveDb(db);
-    return db.gradingMode;
-  })
-    .then(savedMode => res.json({ mode: savedMode }))
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+  try { const settings = await getSettings(); settings.gradingMode = mode; await database.saveSettings(settings); res.json({ mode: settings.gradingMode }); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 // ---------- Admin: kirish va login/parolni o'zgartirish ----------
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'invalid' });
-  withDb(db => {
-    if (username.trim().toLowerCase() !== db.adminUsername.toLowerCase()) return { error: 'invalid-username' };
-    if (password !== db.adminPassword) return { error: 'invalid-password' };
-    return { ok: true, username: db.adminUsername };
-  })
-    .then(result => {
-      if (result.error === 'invalid-username') return res.status(404).json({ error: 'invalid-username' });
-      if (result.error === 'invalid-password') return res.status(401).json({ error: 'invalid-password' });
-      res.json(result);
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+  try { const settings = await getSettings(); if (username.trim().toLowerCase() !== settings.adminUsername.toLowerCase()) return res.status(404).json({ error: 'invalid-username' }); if (password !== settings.adminPassword) return res.status(401).json({ error: 'invalid-password' }); res.json({ ok: true, username: settings.adminUsername }); }
+  catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 
-app.post('/api/admin/credentials', (req, res) => {
+app.post('/api/admin/credentials', async (req, res) => {
   const { currentPassword, newUsername, newPassword } = req.body || {};
   if (!currentPassword) return res.status(400).json({ error: 'invalid' });
-  withDb(db => {
-    if (currentPassword !== db.adminPassword) return { error: 'invalid-password' };
+  try {
+    const settings = await getSettings();
+    if (currentPassword !== settings.adminPassword) return res.status(401).json({ error: 'invalid-password' });
     const trimmedUsername = (newUsername || '').trim();
     if (trimmedUsername) {
-      const conflict = db.students.some(student => student.fullName.toLowerCase() === trimmedUsername.toLowerCase());
-      if (conflict) return { error: 'duplicate-username' };
-      db.adminUsername = trimmedUsername;
+      const conflict = (await database.getStudents()).some(student => student.fullName.toLowerCase() === trimmedUsername.toLowerCase());
+      if (conflict) return res.status(409).json({ error: 'duplicate-username' });
+      settings.adminUsername = trimmedUsername;
     }
     const trimmedPassword = (newPassword || '').trim();
     if (trimmedPassword) {
-      if (trimmedPassword.length < 4) return { error: 'password-too-short' };
-      db.adminPassword = trimmedPassword;
+      if (trimmedPassword.length < 4) return res.status(400).json({ error: 'password-too-short' });
+      settings.adminPassword = trimmedPassword;
     }
-    saveDb(db);
-    return { ok: true, username: db.adminUsername };
-  })
-    .then(result => {
-      if (result.error === 'invalid-password') return res.status(401).json({ error: 'invalid-password' });
-      if (result.error === 'duplicate-username') return res.status(409).json({ error: 'duplicate-username' });
-      if (result.error === 'password-too-short') return res.status(400).json({ error: 'password-too-short' });
-      res.json(result);
-    })
-    .catch(() => res.status(500).json({ error: 'server-error' }));
+    await database.saveSettings(settings); res.json({ ok: true, username: settings.adminUsername });
+  } catch (error) { console.error(error.message); res.status(500).json({ error: 'server-error' }); }
 });
 // ================= /UMUMIY MA'LUMOTLAR BAZASI =================
 
